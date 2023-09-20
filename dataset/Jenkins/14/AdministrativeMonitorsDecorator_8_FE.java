@@ -1,0 +1,176 @@
+
+
+
+StefanSpieker
+on Tue May 31 2022
+
+basil
+on Mon Jan 03 2022
+
+basil
+on Sat Sep 18 2021
+
+fqueiruga
+on Thu Nov 26 2020
+
+Wadeck
+on Tue Nov 17 2020
+
+oguzhancevik
+on Sat Oct 17 2020
+removed redundant if statement (#4966) ...
+
+daniel-beck
+on Fri Apr 17 2020
+
+timja
+on Fri Mar 06 2020
+
+GustavoBezerra
+on Thu Jun 27 2019
+
+jsoref
+on Thu Feb 21 2019
+
+andresrc
+on Thu Jun 01 2017
+
+daniel-beck
+on Sat Dec 17 2016
+
+daniel-beck
+on Wed Sep 21 2016
+
+daniel-beck
+on Wed Sep 21 2016
+/*
+ * The MIT License
+ *
+ * Copyright (c) 2016, Daniel Beck, CloudBees, Inc.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+package jenkins.management;
+
+import hudson.Extension;
+import hudson.diagnosis.ReverseProxySetupMonitor;
+import hudson.model.AdministrativeMonitor;
+import hudson.model.PageDecorator;
+import hudson.util.HudsonIsLoading;
+import hudson.util.HudsonIsRestarting;
+import jenkins.diagnostics.URICheckEncodingMonitor;
+import jenkins.model.Jenkins;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.NoExternalUse;
+import org.kohsuke.stapler.Ancestor;
+import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerRequest;
+
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+
+/**
+ * Show a notification and popup for active administrative monitors on all pages.
+ */
+@Extension
+@Restricted(NoExternalUse.class)
+public class AdministrativeMonitorsDecorator extends PageDecorator {
+    private final Collection<String> ignoredJenkinsRestOfUrls = new ArrayList<>();
+
+    public AdministrativeMonitorsDecorator() {
+        // redundant
+        ignoredJenkinsRestOfUrls.add("manage");
+
+        // otherwise this would be added to every internal context menu building request
+        ignoredJenkinsRestOfUrls.add("contextMenu");
+
+        // don't show here to allow admins to disable malfunctioning monitors via AdministrativeMonitorsDecorator
+        ignoredJenkinsRestOfUrls.add("configure");
+    }
+
+    @Override
+    public String getDisplayName() {
+        return Messages.AdministrativeMonitorsDecorator_DisplayName();
+    }
+
+    public int getActiveAdministrativeMonitorsCount() {
+        return getActiveAdministrativeMonitors().size();
+    }
+
+
+    public Collection<AdministrativeMonitor> getActiveAdministrativeMonitors() {
+        Collection<AdministrativeMonitor> active = new ArrayList<>();
+
+        for (AdministrativeMonitor am : Jenkins.get().getActiveAdministrativeMonitors()) {
+            if (am instanceof ReverseProxySetupMonitor) {
+                // TODO make reverse proxy monitor work when shown on any URL
+                continue;
+            }
+            if (am instanceof URICheckEncodingMonitor) {
+                // TODO make URI encoding monitor work when shown on any URL
+                continue;
+            }
+            active.add(am);
+        }
+        return active;
+    }
+
+    /**
+     * Whether the administrative monitors notifier should be shown.
+     * @return true iff the administrative monitors notifier should be shown.
+     */
+    public boolean shouldDisplay() {
+        if (!Jenkins.get().hasPermission(Jenkins.SYSTEM_READ)) {
+            return false;
+        }
+
+        StaplerRequest req = Stapler.getCurrentRequest();
+
+        if (req == null) {
+            return false;
+        }
+        List<Ancestor> ancestors = req.getAncestors();
+
+        if (ancestors == null || ancestors.size() == 0) {
+            // ???
+            return false;
+        }
+
+        Ancestor a = ancestors.get(ancestors.size() - 1);
+        Object o = a.getObject();
+
+        // don't show while Jenkins is loading
+        if (o instanceof HudsonIsLoading || o instanceof HudsonIsRestarting) {
+            return false;
+        }
+
+        // don't show for some URLs served directly by Jenkins
+        if (o instanceof Jenkins) {
+            String url = a.getRestOfUrl();
+
+            if (ignoredJenkinsRestOfUrls.contains(url)) {
+                return false;
+            }
+        }
+
+        return getActiveAdministrativeMonitorsCount() != 0;
+
+    }
+}
